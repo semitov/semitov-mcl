@@ -79,16 +79,3 @@ class MicroVariable:
 def list_variables():
     exec_raw("dir()\r")
 
-
-def main():
-    ml = MiddleLayer()
-    ml.add_from("Pin", "machine")
-    ml.set_value("led", "Pin(10, Pin.OUT)")
-    val = 1
-    while True:
-        val = not val
-        led.value(val)
-        time.sleep(2)
-
-
-main()
