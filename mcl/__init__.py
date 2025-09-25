@@ -1,3 +1,3 @@
-from .machine import Board, Pin
+from .machine import Board
 
-__all__ = ["Board", "Pin"]
+__all__ = ["Board"]

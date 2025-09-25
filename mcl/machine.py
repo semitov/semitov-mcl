@@ -1,6 +1,5 @@
 from serial import Serial
 
-
 def stringify_args(*args: object, **kwargs: object) -> str:
     tmp: str = ",".join([val.__repr__() for val in args])
     if len(args) != 0 and len(kwargs) != 0:
@@ -8,13 +7,40 @@ def stringify_args(*args: object, **kwargs: object) -> str:
     tmp += ",".join([f"{key}={val.__repr__()}" for key, val in kwargs.items()])
     return tmp
 
+class MicroVariable:
+    name = ""
+
+    def __getattr__(self, name):
+
+        def micro_method(*args, **kwargs): 
+            payload = f"{self.name}.{name}({','.join(map(str, args))}) \r"
+            #print(f"Payload: {payload}")
+            self.execute_raw(payload)
+
+        return micro_method 
+
+    def __call__(self, *args):
+        payload = f"{self.name}({','.join(map(str, args))}) \r"
+        print(payload)
+        execute_raw(payload)
+
+    def __init__(self, name, serial, execute_raw):
+        self.name = name
+        self.__serial = serial
+        self.execute_raw = execute_raw
 
 class Board:
+
+    __boardscope = {}
+
+    def __getattr__(self, name):
+        return self.__boardscope.get(name, False) 
+
+
     def __init__(self, port: str, baudrate: int, timeout: float | None = 0.1) -> None:
         self.__port: str = port
         self.__baudrate: int = baudrate
         self.__serial = Serial(port, baudrate, timeout=timeout)
-        self.add_import("machine")
 
         # To generate names in pattern of "temp%d"
         self.name_counter: int = 0
@@ -54,8 +80,16 @@ class Board:
     def execute_raw(self, command: str) -> bytes:
         _ = self.__serial.write(command.encode())
         self.__serial.flush()
+        #print(f"executing {command}")
         response = self.__serial.readline()
         return response
+
+    def set_variable(self, var_name: str, value=None) -> MicroVariable:
+        if self.__boardscope.get(var_name, False) is False:
+            self.__boardscope[var_name] = MicroVariable(var_name, self.__serial, self.execute_raw)
+        if(value is not None):
+            self.execute_raw(f"{var_name} = {value} \r")
+        return self.__boardscope[var_name]
 
     def call_on_variable(
         self, var_name: str, method_name: str, *args: object, **kwargs: object
@@ -67,54 +101,7 @@ class Board:
 
     def add_import(self, name: str) -> None:
         _ = self.execute_raw(f"import {name}\r")
-
-    # Shortcuts
-    def pin(self, id: int | str, mode: str) -> "Pin":
-        return Pin(self, id, mode)
-
-
-class Pin:
-    IN: str = "Pin.IN"
-    OUT: str = "Pin.OUT"
-    OPEN_DRAIN: str = "Pin.OPEN_DRAIN"
-    ALT: str = "Pin.ALT"
-    ALT_OPEN_DRAIN: str = "Pin.ALT_OPEN_DRAIN"
-    ANALOG: str = "Pin.ANALOG"
-
-    PULL_UP: str = "Pin.PULL_UP"
-    PULL_DOWN: str = "Pin.PULL_DOWN"
-    PULL_HOLD: str = "Pin.PULL_HOLD"
-
-    # TODO: Add remaining to the initializer
-    DRIVE_0: str = "Pin.DRIVE_0"
-    DRIVE_1: str = "Pin.DRIVE_1"
-    DRIVE_2: str = "Pin.DRIVE_2"
-
-    def __init__(
-        self,
-        board: Board,
-        id: int | str,
-        mode: str,
-        pull: str | None = None,
-        value: float | None = None,
-    ) -> None:
-        self.board: Board = board
-        self.name: str = f"tmp{board.name_counter}"
-        board.name_counter += 1
-        _ = board.execute_raw(
-            f"{self.name} = machine.Pin({id}, {mode}, {pull}, value={value})\r"  # TODO: Needs better solution
-        )
-
-    # TODO: Impl .init()
-
-    def on(self) -> None:
-        _ = self.board.call_on_variable(self.name, "on")
-
-    def off(self) -> None:
-        _ = self.board.call_on_variable(self.name, "off")
-
-    def toggle(self) -> None:
-        _ = self.board.call_on_variable(self.name, "toggle")
-
-    def value(self, value: object = None) -> None | object:
-        return self.board.call_on_variable(self.name, "value", value)
+    
+    def add_from_import(self, module: str, name: str) -> None:
+        
+        _ = self.execute_raw(f"from {module} import {name}\r")
