@@ -1,7 +1,18 @@
 # SemiTO-V Micropython Compatibility Layer
 ## How to build
+Clone the repository:
 ```shell
-git clone <nome-repository>
+git clone https://github.com/semitov/SemiTOV-MCL.git
+```
+Create a safe virtual environment:
+``` shell
+cd SemiTOV-MCL
+python -m venv venv
+source venv/bin/activate
+```
+Install the packet:
+``` shell
+pip install .
 ```
 ## How to use
 ``` python
