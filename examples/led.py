@@ -1,4 +1,5 @@
 # SemiTOV-MCL, Micropython compatibility layer.
+# 
 #Copyright (C) 2025 SemiTO-V Student Group <semitofive@gmail.com>
 #
 #    This program is free software: you can redistribute it and/or modify
@@ -14,6 +15,20 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from .machine import Board
+import time
+from mcl import Board
 
-__all__ = ["Board"]
+
+def main():
+    board = Board("/dev/ttyACM0", 115200)
+    board.add_from_import("machine","Pin")
+    #Pin = board.set_variable("Pin")
+    led = board.set_variable("led", "Pin(10, Pin.OUT)")
+    val = 1
+    while True:
+        val = not val
+        _ = led.value(val)
+        time.sleep(2)
+
+if __name__ == "__main__":
+    main()
