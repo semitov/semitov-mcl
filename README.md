@@ -11,40 +11,42 @@ Clone the repository:
 git clone https://github.com/semitov/SemiTOV-MCL.git
 ```
 
-Create a safe virtual environment:
+Sync the project (creates virtual environment and installs dependencies):
 ```shell
 cd SemiTOV-MCL
-python -m venv venv
-source venv/bin/activate
+uv sync
 ```
 
-Install the packet:
-```shell
-pip install .
-```
 ## How to use
 
 ```python
-from <ModuleName> import MiddleLayer
+from mcl import Board
 ```
 
 ### Add a module in Micropython
 
 ```python
-ml = MiddleLayer()
-ml.add("<ModuleName>")
-ml.add_from("<ModuleObject>","<ModuleName>")
+board = Board("/dev/ttyACM0", 115200)
+board.add_import("machine")
+board.add_from_import("machine", "Pin")
 ```
 
 ### Add a variable in Micropython
 
 ```python
-ml.set_value("<variableName>","<rValue>") # Create it
-<variableName>.<methodName> # Use it
+led = board.set_variable("led", "Pin(10, Pin.OUT)")
+led.value(1)  # Use it
 ```
 
 After creating (or setting) a variable you will be able to use it as a normal one.
-**Note**: It will be added to the _global_ scope.
+> Note: It will be added to the _global_ scope.
+
+## Development
+
+Run tests:
+```shell
+uv run pytest
+```
 
 ## How to contribute
 

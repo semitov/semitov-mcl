@@ -1,0 +1,29 @@
+[project]
+name = "semitov-mcl"
+version = "0.1.0"
+description = "Control your micropython based MCU's with this library."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "pyserial>=3.5",
+]
+license = { text = "GPL-3.0-or-later" }
+authors = [
+    { name = "SemiTO-V", email = "semitofive@gmail.com" }
+]
+classifiers = [
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+]
+
+[project.urls]
+Homepage = "https://github.com/semitov/SemiTOV-MCL"
+Repository = "https://github.com/semitov/SemiTOV-MCL"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+]
