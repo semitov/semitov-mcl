@@ -17,6 +17,11 @@ cd SemiTOV-MCL
 uv sync
 ```
 
+Install the package:
+```shell
+uv pip install -e .
+```
+
 ## How to use
 
 ```python
