@@ -22,6 +22,10 @@ Install the package:
 uv pip install -e .
 ```
 
+## How to run
+```python
+uv run examples/<script_name.py>
+```
 ## How to use
 
 ```python
