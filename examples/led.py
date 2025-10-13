@@ -22,7 +22,6 @@ from mcl import Board
 def main():
     board = Board("/dev/ttyACM0", 115200)
     board.add_from_import("machine","Pin")
-    #Pin = board.set_variable("Pin")
     led = board.set_variable("led", "Pin(10, Pin.OUT)")
     val = 1
     while True:

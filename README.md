@@ -1,37 +1,63 @@
 # SemiTO-V Micropython Compatibility Layer
+
+## Requirements
+
+- [uv](https://docs.astral.sh/uv/)
+
 ## How to build
+
 Clone the repository:
 ```shell
 git clone https://github.com/semitov/SemiTOV-MCL.git
 ```
-Create a safe virtual environment:
-``` shell
+
+Sync the project (creates virtual environment and installs dependencies):
+```shell
 cd SemiTOV-MCL
-python -m venv venv
-source venv/bin/activate
+uv sync
 ```
-Install the packet:
-``` shell
-pip install .
+
+Install the package:
+```shell
+uv pip install -e .
+```
+
+## How to run
+```python
+uv run examples/<script_name.py>
 ```
 ## How to use
-``` python
-from <nome-modulo> import MiddleLayer
+
+```python
+from mcl import Board
 ```
+
 ### Add a module in Micropython
-``` python
-ml = MiddleLayer()
-ml.add("<ModuleName>")
-ml.add_from("<ModuleObject>","<ModuleName>")
+
+```python
+board = Board("/dev/ttyACM0", 115200)
+board.add_import("machine")
+board.add_from_import("machine", "Pin")
 ```
+
 ### Add a variable in Micropython
-``` python
-ml.set_value("<variableName>","<rValue>") #Create it
-<variableName>.<methodName> #Use it
+
+```python
+led = board.set_variable("led", "Pin(10, Pin.OUT)")
+led.value(1)  # Use it
 ```
+
 After creating (or setting) a variable you will be able to use it as a normal one.
-**Note**: It will be added to the _global_ scope.
+
+## Development
+
+Run tests:
+```shell
+uv run pytest
+```
+
 ## How to contribute
+
 In order to contribute, **first check the opened issues** and choose one. 
 All the new code that fixes something or implements a new feature must be pushed on a **new branch** with the **name of the issue that is fixing**. 
 Only after it will be merged into the **develop branch**.
