@@ -19,7 +19,6 @@ uv sync
 
 Install the package:
 ```shell
-uv venv
 uv pip install -e .
 ```
 
@@ -49,7 +48,6 @@ led.value(1)  # Use it
 ```
 
 After creating (or setting) a variable you will be able to use it as a normal one.
-> Note: It will be added to the _global_ scope.
 
 ## Development
 
