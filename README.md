@@ -19,6 +19,7 @@ uv sync
 
 Install the package:
 ```shell
+uv venv
 uv pip install -e .
 ```
 
