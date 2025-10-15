@@ -1,19 +1,19 @@
 import time
 from mcl import Board
 
+
+def setup_pin():
+    import neopixel
+    from machine import Pin
+
+    pin = Pin(8, Pin.OUT)
+    np = neopixel.NeoPixel(pin, 1)
+
+    return np
+
+
 with Board("COM4") as board:
-
-    def setup_pin():
-        import neopixel
-        from machine import Pin
-
-        pin = Pin(8, Pin.OUT)
-        np = neopixel.NeoPixel(pin, 1)
-
-        return np
-
-    setup_pin_remote = board.def_function(setup_pin)
-    np = setup_pin_remote()
+    np = board.def_function(setup_pin)()
 
     try:
         while True:

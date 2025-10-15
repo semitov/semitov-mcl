@@ -83,7 +83,7 @@ class Board:
         self.__timeout: float = timeout
         self.__boardscope: dict[str, MicroVariable] = {}
         self.__var_counter: int = 0
-        self.__serial = Optional[Serial] = None
+        self.__serial: Optional[Serial] = None
 
         self._connect()
 
@@ -142,13 +142,13 @@ class Board:
         else:
             self.__timeout = timeout
 
-        if self.is_open():
+        if self.is_open:
             self.__serial.close()
 
         self._connect()
 
     def close(self) -> None:
-        if self.is_open():
+        if self.is_open:
             self.__serial.close()
 
     def generate_var_name(self) -> str:
@@ -166,7 +166,7 @@ class Board:
         return self.set_variable(func.__name__)
 
     def execute_multiline(self, command: str, echo: bool = False) -> bytes:
-        if not self.is_open():
+        if not self.is_open:
             raise SerialException("Serial not connected")
 
         # Enter paste mode
@@ -189,7 +189,7 @@ class Board:
         return response
 
     def execute_raw(self, command: str, echo: bool = False) -> bytes:
-        if not self.is_open():
+        if not self.is_open:
             raise SerialException("Serial not connected")
 
         if echo:
