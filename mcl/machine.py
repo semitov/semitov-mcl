@@ -39,35 +39,36 @@ class MicroVariable:
         self.__board: Board = board
         self.__cached_value: str | None = None
 
-    def __getattr__(self, name: str) -> Callable[..., "MicroVariable"]:
-        def wrapper(*args: object, **kwargs: object):
-            args_str = stringify_args(*args, **kwargs)
-            command = f"{self.__name}.{name}({args_str})"
-            return_var_name = self.__board.generate_var_name()
-            _ = self.__board.execute(f"{return_var_name} = {command}")
-
-            return MicroVariable(return_var_name, self.__board)
-
-        return wrapper
-
-    def __call__(self, *args: object, **kwargs: object) -> "MicroVariable":
-        args_str = stringify_args(*args, **kwargs)
-        command = f"{self.__name}({args_str})"
+    def _execute_and_return(self, command: str) -> "MicroVariable":
         return_var_name = self.__board.generate_var_name()
         _ = self.__board.execute(f"{return_var_name} = {command}")
 
         return MicroVariable(return_var_name, self.__board)
 
+    def __getattr__(self, name: str) -> Callable[..., "MicroVariable"]:
+        def wrapper(*args: object, **kwargs: object):
+            self.__cached_value = None
+            args_str = stringify_args(*args, **kwargs)
+            command = f"{self.__name}.{name}({args_str})"
+            return self._execute_and_return(command)
+
+        return wrapper
+
+    def __call__(self, *args: object, **kwargs: object) -> "MicroVariable":
+        self.__cached_value = None
+        args_str = stringify_args(*args, **kwargs)
+        command = f"{self.__name}({args_str})"
+        return self._execute_and_return(command)
+
     def __setitem__(self, key: object, value: object) -> None:
+        self.__cached_value = None
         command = f"{self.__name}[{repr(key)}] = {repr(value)}"
         _ = self.__board.execute(command)
 
     def __getitem__(self, key: object) -> "MicroVariable":
-        return_var_name = self.__board.generate_var_name()
-        command = f"{return_var_name} = {self.__name}[{repr(key)}]"
-        _ = self.__board.execute(command)
-
-        return MicroVariable(return_var_name, self.__board)
+        self.__cached_value = None
+        command = f"{self.__name}[{repr(key)}]"
+        return self._execute_and_return(command)
 
     def get_value(self, use_cache: bool = False) -> str:
         if use_cache and self.__cached_value is not None:
@@ -81,10 +82,6 @@ class MicroVariable:
     @override
     def __str__(self) -> str:
         return self.get_value()
-
-    @override
-    def __repr__(self) -> str:
-        return f"MicroVariable({self.__name}, value={self.get_value()})"
 
     @property
     def name(self) -> str:
@@ -118,8 +115,12 @@ class Board:
         except SerialException:
             raise SerialException(f"Failed to connect to {self.__port}")
 
-    def __getattr__(self, name: str) -> MicroVariable | None:
-        return self.__boardscope.get(name)
+    def __getattr__(self, name: str) -> MicroVariable:
+        var = self.__boardscope.get(name)
+        if var is None:
+            raise AttributeError(f"Variable '{name}' not found in boardscope")
+
+        return var
 
     def __enter__(self) -> Self:
         return self
@@ -205,7 +206,7 @@ class Board:
         response = self.__serial.read_until(b"\r\n>>> ")
 
         if echo and response:
-            print(f"Response > {response.decode('utf-8').strip()}")
+            logger.debug(f"Response > {response.decode('utf-8').strip()}")
 
         return response
 
@@ -252,16 +253,8 @@ class Board:
 
         return self.__boardscope[var_name]
 
-    def call_on_variable(
-        self, var_name: str, method_name: str, *args: object, **kwargs: object
-    ) -> str:
-        args_str = stringify_args(*args, **kwargs)
-        response = self.execute(f"{var_name}.{method_name}({args_str})")
-
-        return response
-
-    def add_import(self, name: str) -> None:
-        _ = self.execute(f"import {name}")
-
-    def add_from_import(self, module: str, name: str) -> None:
-        _ = self.execute(f"from {module} import {name}")
+    def add_import(self, name: str, from_module: str | None = None) -> None:
+        if from_module:
+            _ = self.execute(f"from {from_module} import {name}")
+        else:
+            _ = self.execute(f"import {name}")
