@@ -39,22 +39,24 @@ uv run examples/<script_name.py>
 from mcl import Board
 ```
 
-### Add a module in Micropython
+### Add a module
 
 ```python
-board = Board("/dev/ttyACM0", 115200)
+board = Board("/dev/ttyACM0", baudrate=115200)
 board.add_import("machine")
-board.add_from_import("machine", "Pin")
+board.add_import("Pin", from_module="machine")
 ```
 
-### Add a variable in Micropython
+### Set a variable
+
+After creating (or setting) a variable you will be able to use it as a normal one.
 
 ```python
 led = board.set_variable("led", "Pin(10, Pin.OUT)")
-led.value(1)  # Use it
+led.value(1)
 ```
 
-After creating (or setting) a variable you will be able to use it as a normal one.
+See more examples [here](./examples/).
 
 ## Development
 
