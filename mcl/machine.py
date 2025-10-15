@@ -1,5 +1,5 @@
 # SemiTOV-MCL, Micropython compatibility layer.
-#Copyright (C) 2025 SemiTO-V Student Group <semitofive@gmail.com>
+# Copyright (C) 2025 SemiTO-V Student Group <semitofive@gmail.com>
 #
 #    This program is free software: you can redistribute it and/or modify
 #     it under the terms of the GNU General Public License as published by
@@ -16,6 +16,7 @@
 
 from serial import Serial
 
+
 def stringify_args(*args: object, **kwargs: object) -> str:
     tmp: str = ",".join([val.__repr__() for val in args])
     if len(args) != 0 and len(kwargs) != 0:
@@ -23,17 +24,17 @@ def stringify_args(*args: object, **kwargs: object) -> str:
     tmp += ",".join([f"{key}={val.__repr__()}" for key, val in kwargs.items()])
     return tmp
 
+
 class MicroVariable:
     name = ""
 
     def __getattr__(self, name):
-
-        def micro_method(*args, **kwargs): 
+        def micro_method(*args, **kwargs):
             payload = f"{self.name}.{name}({','.join(map(str, args))}) \r"
-            #print(f"Payload: {payload}")
+            # print(f"Payload: {payload}")
             self.execute_raw(payload)
 
-        return micro_method 
+        return micro_method
 
     def __call__(self, *args):
         payload = f"{self.name}({','.join(map(str, args))}) \r"
@@ -45,13 +46,12 @@ class MicroVariable:
         self.__serial = serial
         self.execute_raw = execute_raw
 
-class Board:
 
+class Board:
     __boardscope = {}
 
     def __getattr__(self, name):
-        return self.__boardscope.get(name, False) 
-
+        return self.__boardscope.get(name, False)
 
     def __init__(self, port: str, baudrate: int, timeout: float | None = 0.1) -> None:
         self.__port: str = port
@@ -96,14 +96,16 @@ class Board:
     def execute_raw(self, command: str) -> bytes:
         _ = self.__serial.write(command.encode())
         self.__serial.flush()
-        #print(f"executing {command}")
+        # print(f"executing {command}")
         response = self.__serial.readline()
         return response
 
     def set_variable(self, var_name: str, value=None) -> MicroVariable:
         if self.__boardscope.get(var_name, False) is False:
-            self.__boardscope[var_name] = MicroVariable(var_name, self.__serial, self.execute_raw)
-        if(value is not None):
+            self.__boardscope[var_name] = MicroVariable(
+                var_name, self.__serial, self.execute_raw
+            )
+        if value is not None:
             self.execute_raw(f"{var_name} = {value} \r")
         return self.__boardscope[var_name]
 
@@ -117,7 +119,6 @@ class Board:
 
     def add_import(self, name: str) -> None:
         _ = self.execute_raw(f"import {name}\r")
-    
+
     def add_from_import(self, module: str, name: str) -> None:
-        
         _ = self.execute_raw(f"from {module} import {name}\r")
