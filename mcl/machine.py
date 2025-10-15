@@ -73,6 +73,13 @@ class Board:
     def __getattr__(self, name: str) -> Optional[MicroVariable]:
         return self.__boardscope.get(name)
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, traceback):
+        self.close()
+        return False
+
     @property
     def port(self) -> str:
         return self.__port
