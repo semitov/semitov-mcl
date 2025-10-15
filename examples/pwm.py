@@ -20,21 +20,24 @@ from mcl import Board
 
 
 def main():
-    # We initialize the board on the port specified
-    board = Board("/dev/ttyACM0", 115200)
+    # Connect to board (optional: baudrate=115200, timeout=1.0)
+    # Windows: use "COM3", "COM4", etc.
+    board = Board("/dev/ttyACM0")
 
-    # We import the modules PWM and Pin on the target board
+    # Import PWM and Pin classes on the remote board
     board.add_from_import("machine", "PWM")
     board.add_from_import("machine", "Pin")
 
-    # A pwm object is created in Micropython, enabling the PIN 29 (ADC) on our board
+    # Create PWM object on GPIO 29
     pwm = board.set_variable("pwm", "PWM(Pin(29), freq=50, duty_u16=8192)")
 
-    # Once we created the object in micropython we can use it as an object on our PC.
+    # Reconfigure PWM: 5kHz frequency, 5000ns duty cycle
     pwm.init(freq=5000, duty_ns=5000)
     pwm.duty_ns = 1000
+
     step = 128
 
+    # Fade in/out loop
     while True:
         for val in range(0, 65536, step):
             pwm.duty_u16(val)

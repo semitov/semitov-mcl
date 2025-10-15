@@ -20,13 +20,21 @@ from mcl import Board
 
 
 def main():
-    board = Board("/dev/ttyACM0", 115200)
+    # Connect to board (optional: baudrate=115200, timeout=1.0)
+    # Windows: use "COM3", "COM4", etc.
+    board = Board("/dev/ttyACM0")
+
+    # Import Pin class on the remote board
     board.add_from_import("machine", "Pin")
+
+    # Create LED pin
     led = board.set_variable("led", "Pin(10, Pin.OUT)")
+
     val = 1
     while True:
         val = not val
-        _ = led.value(val)
+        # Toggle LED on/off
+        led.value(val)
         time.sleep(2)
 
 
