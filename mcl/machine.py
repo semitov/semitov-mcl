@@ -22,12 +22,12 @@ import textwrap
 
 
 def stringify_args(*args: object, **kwargs: object) -> str:
-    tmp: str = ",".join([val.__repr__() for val in args])
-    if len(args) != 0 and len(kwargs) != 0:
-        tmp += ","
-    tmp += ",".join([f"{key}={val.__repr__()}" for key, val in kwargs.items()])
+    args_repr = ",".join(repr(val) for val in args)
+    kwargs_repr = ",".join(f"{key}={repr(val)}" for key, val in kwargs.items())
 
-    return tmp
+    if args_repr and kwargs_repr:
+        return f"{args_repr},{kwargs_repr}"
+    return args_repr or kwargs_repr
 
 
 class MicroVariable:
@@ -55,13 +55,26 @@ class MicroVariable:
         return MicroVariable(return_var_name, self.__board)
 
     def __setitem__(self, key: Any, value: Any) -> None:
-        key = repr(key)
-        value = repr(value)
-        command = f"{self.__name}[{key}] = {value}"
+        command = f"{self.__name}[{repr(key)}] = {repr(value)}"
         self.__board.execute(command)
+
+    def __getitem__(self, key: Any) -> "MicroVariable":
+        return_var_name = self.__board.generate_var_name()
+        command = f"{return_var_name} = {self.__name}[{repr(key)}]"
+        self.__board.execute(command)
+
+        return MicroVariable(return_var_name, self.__board)
+
+    @property
+    def name(self) -> str:
+        return self.__name
 
 
 class Board:
+    CTRL_C = b"\x03"
+    CTRL_D = b"\x04"
+    CTRL_E = b"\x05"
+
     def __init__(
         self, port: str, baudrate: int = 115200, timeout: Optional[float] = 1.0
     ) -> None:
@@ -70,20 +83,21 @@ class Board:
         self.__timeout: float = timeout
         self.__boardscope: dict[str, MicroVariable] = {}
         self.__var_counter: int = 0
+        self.__serial = Optional[Serial] = None
 
+        self._connect()
+
+    def _connect(self) -> None:
         try:
-            self.__serial = Serial(port, baudrate, timeout=timeout)
+            self.__serial = Serial(self.__port, self.__baudrate, timeout=self.__timeout)
             time.sleep(0.1)
             self.__serial.reset_input_buffer()
             self.__serial.reset_output_buffer()
-            # Interrupt what is running
-            self.__serial.write(b"\x03")  # CTRL-C
+            self.__serial.write(self.CTRL_C)
             time.sleep(0.1)
             self.__serial.reset_input_buffer()
-        except SerialException as e:
-            raise SerialException(
-                f"Failed to connect to {port} (baud: {baudrate}): {e}"
-            )
+        except SerialException:
+            raise SerialException(f"Failed to connect to {self.__port}")
 
     def __getattr__(self, name: str) -> Optional[MicroVariable]:
         return self.__boardscope.get(name)
@@ -120,7 +134,7 @@ class Board:
 
     @property
     def is_open(self) -> bool:
-        return self.__serial.is_open if hasattr(self.__serial, "is_open") else False
+        return self.__serial.is_open if self.__serial else False
 
     def reconnect(self, timeout: Optional[float] = None) -> None:
         if timeout is None:
@@ -128,17 +142,13 @@ class Board:
         else:
             self.__timeout = timeout
 
-        if self.__serial.is_open:
+        if self.is_open():
             self.__serial.close()
 
-        # Try to reconnect
-        self.__serial = Serial(self.__port, self.__baudrate, timeout=timeout)
-        time.sleep(0.1)
-        self.__serial.reset_input_buffer()
-        self.__serial.reset_output_buffer()
+        self._connect()
 
     def close(self) -> None:
-        if self.__serial.is_open:
+        if self.is_open():
             self.__serial.close()
 
     def generate_var_name(self) -> str:
@@ -156,20 +166,20 @@ class Board:
         return self.set_variable(func.__name__)
 
     def execute_multiline(self, command: str, echo: bool = False) -> bytes:
-        if not self.__serial.is_open:
+        if not self.is_open():
             raise SerialException("Serial not connected")
 
-        # MicroPython paste mode
-        self.__serial.write(b"\x05")  # CTRL-E
+        # Enter paste mode
+        self.__serial.write(self.CTRL_E)
         time.sleep(0.1)
-        self.__serial.read_until(b"=== ")  # paste mode prompt
+        self.__serial.read_until(b"=== ")
 
         self.__serial.write(command.encode())
         self.__serial.write(b"\r\n")
 
         # Exit paste mode
-        self.__serial.write(b"\x04")  # CTRL-D
-        time.sleep(0.1)
+        self.__serial.write(self.CTRL_D)  # CTRL-D
+        time.sleep(0.2)
 
         response = self.__serial.read_until(b"\r\n>>> ")
 
@@ -179,7 +189,7 @@ class Board:
         return response
 
     def execute_raw(self, command: str, echo: bool = False) -> bytes:
-        if not self.__serial.is_open:
+        if not self.is_open():
             raise SerialException("Serial not connected")
 
         if echo:
@@ -208,8 +218,9 @@ class Board:
     def set_variable(self, var_name: str, value: Optional[str] = None) -> MicroVariable:
         if var_name not in self.__boardscope:
             self.__boardscope[var_name] = MicroVariable(var_name, self)
+
         if value is not None:
-            self.execute_raw(f"{var_name} = {value}")
+            self.execute(f"{var_name} = {value}")
 
         return self.__boardscope[var_name]
 
@@ -217,12 +228,12 @@ class Board:
         self, var_name: str, method_name: str, *args: object, **kwargs: object
     ) -> str:
         args_str = stringify_args(*args, **kwargs)
-        response = self.execute_raw(f"{var_name}.{method_name}({args_str})")
+        response = self.execute(f"{var_name}.{method_name}({args_str})")
 
-        return response.decode("utf-8").strip()
+        return response
 
     def add_import(self, name: str) -> None:
-        self.execute_raw(f"import {name}")
+        self.execute(f"import {name}")
 
     def add_from_import(self, module: str, name: str) -> None:
-        self.execute_raw(f"from {module} import {name}")
+        self.execute(f"from {module} import {name}")
