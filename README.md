@@ -1,5 +1,7 @@
 # SemiTO-V Micropython Compatibility Layer
 
+"MCL" (Micropython Compatibility Layer) library allowing inclusion of [Micropython](https://micropython.org/) code targeting MCUs within [CPython](https://www.python.org/). Made for RISC-V based [RP2350 GPIO Expansion Card](https://github.com/semitov/rp2350-gpio-card) for Framework Laptops. Works well with any MCU that supports Micropython connected to RISC-V, ARM and X86 PCs.
+
 ## Requirements
 
 - [uv](https://docs.astral.sh/uv/)
