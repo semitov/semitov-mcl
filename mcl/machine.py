@@ -31,7 +31,6 @@ class MicroVariable:
     def __getattr__(self, name):
         def micro_method(*args, **kwargs):
             payload = f"{self.name}.{name}({','.join(map(str, args))}) \r"
-            # print(f"Payload: {payload}")
             self.execute_raw(payload)
 
         return micro_method
@@ -39,7 +38,7 @@ class MicroVariable:
     def __call__(self, *args):
         payload = f"{self.name}({','.join(map(str, args))}) \r"
         print(payload)
-        execute_raw(payload)
+        self.execute_raw(payload)
 
     def __init__(self, name, serial, execute_raw):
         self.name = name
@@ -96,7 +95,6 @@ class Board:
     def execute_raw(self, command: str) -> bytes:
         _ = self.__serial.write(command.encode())
         self.__serial.flush()
-        # print(f"executing {command}")
         response = self.__serial.readline()
         return response
 
