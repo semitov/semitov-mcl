@@ -15,10 +15,13 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from serial import Serial, SerialException
-from typing import Callable
+from typing import Callable, override, Self
 import time
 import inspect
 import textwrap
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def stringify_args(*args: object, **kwargs: object) -> str:
@@ -32,8 +35,9 @@ def stringify_args(*args: object, **kwargs: object) -> str:
 
 class MicroVariable:
     def __init__(self, name: str, board: "Board") -> None:
-        self.__name = name
-        self.__board = board
+        self.__name: str = name
+        self.__board: Board = board
+        self.__cached_value: str | None = None
 
     def __getattr__(self, name: str) -> Callable[..., "MicroVariable"]:
         def wrapper(*args: object, **kwargs: object):
@@ -64,6 +68,23 @@ class MicroVariable:
         _ = self.__board.execute(command)
 
         return MicroVariable(return_var_name, self.__board)
+
+    def get_value(self, use_cache: bool = False) -> str:
+        if use_cache and self.__cached_value is not None:
+            return self.__cached_value
+
+        value = self.__board.execute(f"print({self.__name})")
+        self.__cached_value = value
+
+        return value
+
+    @override
+    def __str__(self) -> str:
+        return self.get_value()
+
+    @override
+    def __repr__(self) -> str:
+        return f"MicroVariable({self.__name}, value={self.get_value()})"
 
     @property
     def name(self) -> str:
@@ -100,7 +121,7 @@ class Board:
     def __getattr__(self, name: str) -> MicroVariable | None:
         return self.__boardscope.get(name)
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, type: object, value: object, traceback: object):
@@ -193,20 +214,27 @@ class Board:
             raise SerialException("Serial not connected")
 
         if echo:
-            print(f"Executing > {command.rstrip()}")
+            logger.debug(f"Executing > {command.rstrip()}")
 
         try:
             if not command.endswith("\r"):
                 command += "\r"
 
+            self.__serial.reset_input_buffer()
             _ = self.__serial.write(command.encode())
             self.__serial.flush()
-            response = self.__serial.read_until(b"\r\n")
+
+            response = self.__serial.read_until(b">>> ")
+            lines = response.split(b"\r\n")
+            if len(lines) > 2:
+                clean_response = b"\r\n".join(lines[1:-1])
+            else:
+                clean_response = b""
 
             if echo and response:
-                print(f"Response > {response.decode('utf-8').strip()}")
+                logger.debug(f"Raw Response > {response.decode('utf-8').strip()}")
 
-            return response
+            return clean_response
         except SerialException as e:
             raise SerialException(f"Failed to execute {command.strip()}: {e}")
 

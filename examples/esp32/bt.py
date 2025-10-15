@@ -2,7 +2,7 @@ from mcl import Board
 import time
 
 
-def setup_ble(device_name):
+def setup_ble(device_name: str):
     import bluetooth
 
     ble = bluetooth.BLE()
@@ -17,10 +17,11 @@ def setup_ble(device_name):
 
 
 with Board("COM4") as board:
-    ble = board.def_function(setup_ble)()
+    ble = board.def_function(setup_ble)("ESP32 BT")
 
-    print(ble.name)
-    res = board.execute_raw(f"print({ble.name})", echo=True)
+    print(f"BT Name: {ble.name}")
+    is_active = ble.active()
+    print(f"BLE is active: {is_active}")
 
     try:
         while True:
