@@ -17,6 +17,8 @@
 from serial import Serial, SerialException
 from typing import Any, Callable, Optional
 import time
+import inspect
+import textwrap
 
 
 def stringify_args(*args: object, **kwargs: object) -> str:
@@ -24,27 +26,39 @@ def stringify_args(*args: object, **kwargs: object) -> str:
     if len(args) != 0 and len(kwargs) != 0:
         tmp += ","
     tmp += ",".join([f"{key}={val.__repr__()}" for key, val in kwargs.items()])
+
     return tmp
 
 
 class MicroVariable:
-    def __init__(self, name: str, serial: Serial, execute_raw) -> None:
-        self.name = name
-        self.__serial = serial
-        self.execute_raw = execute_raw
+    def __init__(self, name: str, board: "Board") -> None:
+        self.__name = name
+        self.__board = board
 
     def __getattr__(self, name: str) -> Callable:
-        def micro_method(*args: Any, **kwargs: Any) -> bytes:
+        def wrapper(*args, **kwargs):
             args_str = stringify_args(*args, **kwargs)
-            payload = f"{self.name}.{name}({args_str})\r"
-            return self.execute_raw(payload)
+            command = f"{self.__name}.{name}({args_str})"
+            return_var_name = self.__board.generate_var_name()
+            self.__board.execute(f"{return_var_name} = {command}")
 
-        return micro_method
+            return MicroVariable(return_var_name, self.__board)
 
-    def __call__(self, *args: Any, **kwargs: Any) -> bytes:
+        return wrapper
+
+    def __call__(self, *args: Any, **kwargs: Any) -> "MicroVariable":
         args_str = stringify_args(*args, **kwargs)
-        payload = f"{self.name}({args_str})\r"
-        return self.execute_raw(payload)
+        command = f"{self.__name}({args_str})"
+        return_var_name = self.__board.generate_var_name()
+        self.__board.execute(f"{return_var_name} = {command}")
+
+        return MicroVariable(return_var_name, self.__board)
+
+    def __setitem__(self, key: Any, value: Any) -> None:
+        key = repr(key)
+        value = repr(value)
+        command = f"{self.__name}[{key}] = {value}"
+        self.__board.execute(command)
 
 
 class Board:
@@ -55,6 +69,7 @@ class Board:
         self.__baudrate: int = baudrate
         self.__timeout: float = timeout
         self.__boardscope: dict[str, MicroVariable] = {}
+        self.__var_counter: int = 0
 
         try:
             self.__serial = Serial(port, baudrate, timeout=timeout)
@@ -78,6 +93,7 @@ class Board:
 
     def __exit__(self, type, value, traceback):
         self.close()
+
         return False
 
     @property
@@ -125,6 +141,43 @@ class Board:
         if self.__serial.is_open:
             self.__serial.close()
 
+    def generate_var_name(self) -> str:
+        # Generate a variable name for internal use
+        name = f"_mcl_var_{self.__var_counter}"
+        self.__var_counter += 1
+
+        return name
+
+    def def_function(self, func: Callable) -> MicroVariable:
+        source = inspect.getsource(func)
+        source = textwrap.dedent(source)
+        self.execute_multiline(source)
+
+        return self.set_variable(func.__name__)
+
+    def execute_multiline(self, command: str, echo: bool = False) -> bytes:
+        if not self.__serial.is_open:
+            raise SerialException("Serial not connected")
+
+        # MicroPython paste mode
+        self.__serial.write(b"\x05")  # CTRL-E
+        time.sleep(0.1)
+        self.__serial.read_until(b"=== ")  # paste mode prompt
+
+        self.__serial.write(command.encode())
+        self.__serial.write(b"\r\n")
+
+        # Exit paste mode
+        self.__serial.write(b"\x04")  # CTRL-D
+        time.sleep(0.1)
+
+        response = self.__serial.read_until(b"\r\n>>> ")
+
+        if echo and response:
+            print(f"Response > {response.decode('utf-8').strip()}")
+
+        return response
+
     def execute_raw(self, command: str, echo: bool = False) -> bytes:
         if not self.__serial.is_open:
             raise SerialException("Serial not connected")
@@ -149,15 +202,15 @@ class Board:
 
     def execute(self, command: str, echo: bool = False) -> str:
         response = self.execute_raw(command, echo=echo)
+
         return response.decode("utf-8").strip()
 
     def set_variable(self, var_name: str, value: Optional[str] = None) -> MicroVariable:
         if var_name not in self.__boardscope:
-            self.__boardscope[var_name] = MicroVariable(
-                var_name, self.__serial, self.execute_raw
-            )
+            self.__boardscope[var_name] = MicroVariable(var_name, self)
         if value is not None:
             self.execute_raw(f"{var_name} = {value}")
+
         return self.__boardscope[var_name]
 
     def call_on_variable(
@@ -165,6 +218,7 @@ class Board:
     ) -> str:
         args_str = stringify_args(*args, **kwargs)
         response = self.execute_raw(f"{var_name}.{method_name}({args_str})")
+
         return response.decode("utf-8").strip()
 
     def add_import(self, name: str) -> None:
