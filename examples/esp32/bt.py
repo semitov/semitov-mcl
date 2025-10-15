@@ -17,11 +17,13 @@ def setup_ble(device_name):
 
 
 with Board("COM4") as board:
-    ble = board.def_function(setup_ble)("ESP32 BT")
-    print(ble.hex())
+    ble = board.def_function(setup_ble)()
+
+    print(ble.name)
+    res = board.execute_raw(f"print({ble.name})", echo=True)
 
     try:
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("Interrupt")
+        print("Interrupted")

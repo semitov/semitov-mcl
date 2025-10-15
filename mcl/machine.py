@@ -15,7 +15,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from serial import Serial, SerialException
-from typing import Any, Callable, Optional
+from typing import Callable
 import time
 import inspect
 import textwrap
@@ -35,33 +35,33 @@ class MicroVariable:
         self.__name = name
         self.__board = board
 
-    def __getattr__(self, name: str) -> Callable:
-        def wrapper(*args, **kwargs):
+    def __getattr__(self, name: str) -> Callable[..., "MicroVariable"]:
+        def wrapper(*args: object, **kwargs: object):
             args_str = stringify_args(*args, **kwargs)
             command = f"{self.__name}.{name}({args_str})"
             return_var_name = self.__board.generate_var_name()
-            self.__board.execute(f"{return_var_name} = {command}")
+            _ = self.__board.execute(f"{return_var_name} = {command}")
 
             return MicroVariable(return_var_name, self.__board)
 
         return wrapper
 
-    def __call__(self, *args: Any, **kwargs: Any) -> "MicroVariable":
+    def __call__(self, *args: object, **kwargs: object) -> "MicroVariable":
         args_str = stringify_args(*args, **kwargs)
         command = f"{self.__name}({args_str})"
         return_var_name = self.__board.generate_var_name()
-        self.__board.execute(f"{return_var_name} = {command}")
+        _ = self.__board.execute(f"{return_var_name} = {command}")
 
         return MicroVariable(return_var_name, self.__board)
 
-    def __setitem__(self, key: Any, value: Any) -> None:
+    def __setitem__(self, key: object, value: object) -> None:
         command = f"{self.__name}[{repr(key)}] = {repr(value)}"
-        self.__board.execute(command)
+        _ = self.__board.execute(command)
 
-    def __getitem__(self, key: Any) -> "MicroVariable":
+    def __getitem__(self, key: object) -> "MicroVariable":
         return_var_name = self.__board.generate_var_name()
         command = f"{return_var_name} = {self.__name}[{repr(key)}]"
-        self.__board.execute(command)
+        _ = self.__board.execute(command)
 
         return MicroVariable(return_var_name, self.__board)
 
@@ -71,19 +71,17 @@ class MicroVariable:
 
 
 class Board:
-    CTRL_C = b"\x03"
-    CTRL_D = b"\x04"
-    CTRL_E = b"\x05"
+    CTRL_C: bytes = b"\x03"
+    CTRL_D: bytes = b"\x04"
+    CTRL_E: bytes = b"\x05"
 
-    def __init__(
-        self, port: str, baudrate: int = 115200, timeout: Optional[float] = 1.0
-    ) -> None:
+    def __init__(self, port: str, baudrate: int = 115200, timeout: float = 1.0) -> None:
         self.__port: str = port
         self.__baudrate: int = baudrate
         self.__timeout: float = timeout
         self.__boardscope: dict[str, MicroVariable] = {}
         self.__var_counter: int = 0
-        self.__serial: Optional[Serial] = None
+        self.__serial: Serial
 
         self._connect()
 
@@ -93,19 +91,19 @@ class Board:
             time.sleep(0.1)
             self.__serial.reset_input_buffer()
             self.__serial.reset_output_buffer()
-            self.__serial.write(self.CTRL_C)
+            _ = self.__serial.write(self.CTRL_C)
             time.sleep(0.1)
             self.__serial.reset_input_buffer()
         except SerialException:
             raise SerialException(f"Failed to connect to {self.__port}")
 
-    def __getattr__(self, name: str) -> Optional[MicroVariable]:
+    def __getattr__(self, name: str) -> MicroVariable | None:
         return self.__boardscope.get(name)
 
     def __enter__(self):
         return self
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(self, type: object, value: object, traceback: object):
         self.close()
 
         return False
@@ -136,7 +134,7 @@ class Board:
     def is_open(self) -> bool:
         return self.__serial.is_open if self.__serial else False
 
-    def reconnect(self, timeout: Optional[float] = None) -> None:
+    def reconnect(self, timeout: float | None = None) -> None:
         if timeout is None:
             timeout = self.__timeout
         else:
@@ -158,10 +156,12 @@ class Board:
 
         return name
 
-    def def_function(self, func: Callable) -> MicroVariable:
+    def def_function(self, func: object) -> MicroVariable:
+        if not callable(func):
+            raise TypeError(f"Expected a Callable, got: {type(func)}")
         source = inspect.getsource(func)
         source = textwrap.dedent(source)
-        self.execute_multiline(source)
+        _ = self.execute_multiline(source)
 
         return self.set_variable(func.__name__)
 
@@ -170,15 +170,15 @@ class Board:
             raise SerialException("Serial not connected")
 
         # Enter paste mode
-        self.__serial.write(self.CTRL_E)
+        _ = self.__serial.write(self.CTRL_E)
         time.sleep(0.1)
-        self.__serial.read_until(b"=== ")
+        _ = self.__serial.read_until(b"=== ")
 
-        self.__serial.write(command.encode())
-        self.__serial.write(b"\r\n")
+        _ = self.__serial.write(command.encode())
+        _ = self.__serial.write(b"\r\n")
 
         # Exit paste mode
-        self.__serial.write(self.CTRL_D)  # CTRL-D
+        _ = self.__serial.write(self.CTRL_D)  # CTRL-D
         time.sleep(0.2)
 
         response = self.__serial.read_until(b"\r\n>>> ")
@@ -199,7 +199,7 @@ class Board:
             if not command.endswith("\r"):
                 command += "\r"
 
-            self.__serial.write(command.encode())
+            _ = self.__serial.write(command.encode())
             self.__serial.flush()
             response = self.__serial.read_until(b"\r\n")
 
@@ -215,12 +215,12 @@ class Board:
 
         return response.decode("utf-8").strip()
 
-    def set_variable(self, var_name: str, value: Optional[str] = None) -> MicroVariable:
+    def set_variable(self, var_name: str, value: str | None = None) -> MicroVariable:
         if var_name not in self.__boardscope:
             self.__boardscope[var_name] = MicroVariable(var_name, self)
 
         if value is not None:
-            self.execute(f"{var_name} = {value}")
+            _ = self.execute(f"{var_name} = {value}")
 
         return self.__boardscope[var_name]
 
@@ -233,7 +233,7 @@ class Board:
         return response
 
     def add_import(self, name: str) -> None:
-        self.execute(f"import {name}")
+        _ = self.execute(f"import {name}")
 
     def add_from_import(self, module: str, name: str) -> None:
-        self.execute(f"from {module} import {name}")
+        _ = self.execute(f"from {module} import {name}")
