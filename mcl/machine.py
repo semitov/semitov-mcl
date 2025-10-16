@@ -201,6 +201,8 @@ class Board:
             _ = self.__serial.read_until(b">>> ")
             logger.debug("Soft reset complete")
         except SerialTimeoutException:
+            self.__serial.reset_input_buffer()
+            self.__serial.reset_output_buffer()
             logger.error("Timeout reading until")
 
     def hard_reset(self) -> None:
@@ -216,6 +218,8 @@ class Board:
             _ = self.execute_multiline(cmd)
             logger.debug("Hard reset complete")
         except SerialTimeoutException:
+            self.__serial.reset_input_buffer()
+            self.__serial.reset_output_buffer()
             logger.error("Timeout reading until")
 
     def close(self) -> None:
@@ -271,7 +275,10 @@ class Board:
         try:
             _ = self.__serial.read_until(b"=== ")
         except SerialTimeoutException:
+            self.__serial.reset_input_buffer()
+            self.__serial.reset_output_buffer()
             logger.error("Timeout reading until")
+
         _ = self.__serial.write(command.encode())
         _ = self.__serial.write(b"\r\n")
         # Exit paste mode
@@ -280,6 +287,8 @@ class Board:
         try:
             response = self.__serial.read_until(b"\r\n>>> ")
         except SerialTimeoutException:
+            self.__serial.reset_input_buffer()
+            self.__serial.reset_output_buffer()
             logger.error("Timeout reading until")
         if response:
             logger.debug(
