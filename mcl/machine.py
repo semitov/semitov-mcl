@@ -111,7 +111,7 @@ class Board:
         self.__serial: Serial
 
         self._connect()
-        self.hard_reset()
+        self.soft_reset()
 
     def _connect(self) -> None:
         try:
@@ -211,7 +211,7 @@ class Board:
             machine.reset()
             """
             cmd = textwrap.dedent(cmd)
-            self.execute_multiline(cmd)
+            _ = self.execute_multiline(cmd)
             logger.debug("Hard reset complete")
         except SerialTimeoutException:
             logger.error("Timeout reading until")
@@ -222,6 +222,24 @@ class Board:
             self.hard_reset()
             self.__serial.close()
             logger.debug("Serial closed")
+
+    def _clean_repl_output(self, text: str, command: str | None = None) -> str:
+        if not text:
+            return ""
+
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+
+        if text.endswith(">>> "):
+            text = text[:-4].rstrip()
+        elif text.endswith(">>>"):
+            text = text[:-3].rstrip()
+
+        if command:
+            cmd = command.strip()
+            if text.startswith(cmd):
+                text = text[len(cmd) :]
+
+        return text.strip()
 
     def generate_var_name(self) -> str:
         # Generate a variable name for internal use
@@ -262,7 +280,9 @@ class Board:
         except SerialTimeoutException:
             logger.error("Timeout reading until")
         if response:
-            logger.debug(f"Response > {response.decode('utf-8').strip()}")
+            logger.debug(
+                f"Response > {response.decode('utf-8', errors='ignore').strip()}"
+            )
         logger.debug(f"Received {len(response)} bytes")
         return response
 
@@ -274,9 +294,11 @@ class Board:
 
         if not command.endswith("\r"):
             command += "\r"
+
         self.__serial.reset_input_buffer()
         _ = self.__serial.write(command.encode())
         self.__serial.flush()
+
         try:
             response = self.__serial.read_until(b">>> ")
             if response:
@@ -291,9 +313,11 @@ class Board:
 
     def execute(self, command: str) -> str:
         response = self.execute_raw(command)
-        text = response.decode("utf-8").strip()
-        logger.debug(f"Got {len(text)} chars")
-        return text
+        text = response.decode("utf-8", errors="ignore")
+
+        clean = self._clean_repl_output(text, command)
+        logger.debug(f"CLEAN: {clean} ({len(clean)}) chars")
+        return clean
 
     def set_variable(self, var_name: str, value: str | None = None) -> MicroVariable:
         if var_name not in self.__boardscope:

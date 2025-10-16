@@ -4,12 +4,10 @@ import time
 
 def setup_network():
     import network
-    import time
 
     ap = network.WLAN(network.WLAN.IF_AP)
 
     ap.active(False)
-    time.sleep(1)
 
     essid = "WiFi ESP32"
     password = "pswdpswd"
@@ -17,7 +15,6 @@ def setup_network():
     ap.config(essid=essid, password=password, authmode=4)
 
     ap.active(True)
-    time.sleep(2)
 
     return ap
 
