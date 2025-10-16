@@ -21,12 +21,8 @@ import inspect
 import textwrap
 import logging
 
-logging.basicConfig(
-    level=logging.DEBUG,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%H:%M:%S",
-)
 logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 def stringify_args(*args: object, **kwargs: object) -> str:
@@ -39,10 +35,17 @@ def stringify_args(*args: object, **kwargs: object) -> str:
 
 
 class MicroVariable:
-    def __init__(self, name: str, board: "Board") -> None:
+    def __init__(self, name: str, board: "Board", debug: bool = False) -> None:
         self.__name: str = name
         self.__board: Board = board
         self.__cached_value: str | None = None
+
+        if debug:
+            logging.basicConfig(
+                level=logging.DEBUG,
+                format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                datefmt="%H:%M:%S",
+            )
 
     def _execute_and_return(self, command: str) -> "MicroVariable":
         return_var_name = self.__board.generate_var_name()

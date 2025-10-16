@@ -19,9 +19,7 @@ def setup_ble(device_name: str):
 with Board("COM4") as board:
     ble = board.def_function(setup_ble)("ESP32 BT")
 
-    print(f"BT Name: {ble.name}")
-    is_active = ble.active()
-    print(f"BLE is active: {is_active}")
+    print(f"BLE is active: {ble.active()}")
 
     try:
         while True:

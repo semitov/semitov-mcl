@@ -31,4 +31,3 @@ with Board("COM4") as board:
     except KeyboardInterrupt:
         np[0] = (0, 0, 0)
         np.write()
-        print("Interrupted")
