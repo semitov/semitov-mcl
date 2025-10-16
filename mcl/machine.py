@@ -177,13 +177,12 @@ class Board:
         return self.__serial.is_open if self.__serial else False
 
     def reconnect(self, timeout: float | None = None) -> None:
-        logger.debug(
-            f"Reconnecting (timeout={timeout if timeout is not None else self.__timeout})"
-        )
         if timeout is None:
             timeout = self.__timeout
         else:
             self.__timeout = timeout
+
+        logger.debug(f"Reconnecting (timeout={timeout})")
         if self.is_open:
             logger.debug("Closing existing serial before reconnect")
             self.__serial.close()
@@ -241,7 +240,7 @@ class Board:
         logger.debug(f"Function '{func.__name__}' defined")
         return self.set_variable(func.__name__)
 
-    def execute_multiline(self, command: str, echo: bool = False) -> bytes:
+    def execute_multiline(self, command: str) -> bytes:
         if not self.is_open:
             raise SerialException("Serial not connected")
         logger.debug(f"Sending {len(command)} bytes in paste mode")
@@ -262,7 +261,7 @@ class Board:
             response = self.__serial.read_until(b"\r\n>>> ")
         except SerialTimeoutException:
             logger.error("Timeout reading until")
-        if echo and response:
+        if response:
             logger.debug(f"Response > {response.decode('utf-8').strip()}")
         logger.debug(f"Received {len(response)} bytes")
         return response
@@ -290,8 +289,8 @@ class Board:
         except SerialException as e:
             raise SerialException(f"Failed to execute {command.strip()}: {e}")
 
-    def execute(self, command: str, echo: bool = False) -> str:
-        response = self.execute_raw(command, echo=echo)
+    def execute(self, command: str) -> str:
+        response = self.execute_raw(command)
         text = response.decode("utf-8").strip()
         logger.debug(f"Got {len(text)} chars")
         return text
