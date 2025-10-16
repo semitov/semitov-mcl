@@ -14,13 +14,14 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from serial import Serial, SerialException
+from serial import Serial, SerialException, SerialTimeoutException
 from typing import Callable, override, Self
 import time
 import inspect
 import textwrap
 import logging
 
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
@@ -70,7 +71,7 @@ class MicroVariable:
         command = f"{self.__name}[{repr(key)}]"
         return self._execute_and_return(command)
 
-    def get_value(self, use_cache: bool = False) -> str:
+    def get_value(self, use_cache: bool = True) -> str:
         if use_cache and self.__cached_value is not None:
             return self.__cached_value
 
@@ -102,6 +103,7 @@ class Board:
         self.__serial: Serial
 
         self._connect()
+        self.soft_reset()
 
     def _connect(self) -> None:
         try:
@@ -167,8 +169,20 @@ class Board:
 
         self._connect()
 
+    def soft_reset(self) -> None:
+        if not self.is_open:
+            raise SerialException("Serial not connected")
+
+        self.__serial.reset_input_buffer()
+        _ = self.__serial.write(self.CTRL_D)
+        try:
+            _ = self.__serial.read_until(b">>> ")
+        except SerialTimeoutException:
+            logger.error("Timeout reading until")
+
     def close(self) -> None:
         if self.is_open:
+            self.soft_reset()
             self.__serial.close()
 
     def generate_var_name(self) -> str:
@@ -192,18 +206,24 @@ class Board:
             raise SerialException("Serial not connected")
 
         # Enter paste mode
+        self.__serial.reset_input_buffer()
         _ = self.__serial.write(self.CTRL_E)
-        time.sleep(0.1)
-        _ = self.__serial.read_until(b"=== ")
+        try:
+            _ = self.__serial.read_until(b"=== ")
+        except SerialTimeoutException:
+            logger.error("Timeout reading until")
 
         _ = self.__serial.write(command.encode())
         _ = self.__serial.write(b"\r\n")
 
         # Exit paste mode
         _ = self.__serial.write(self.CTRL_D)  # CTRL-D
-        time.sleep(0.2)
 
-        response = self.__serial.read_until(b"\r\n>>> ")
+        response = b""
+        try:
+            response = self.__serial.read_until(b"\r\n>>> ")
+        except SerialTimeoutException:
+            logger.error("Timeout reading until")
 
         if echo and response:
             logger.debug(f"Response > {response.decode('utf-8').strip()}")

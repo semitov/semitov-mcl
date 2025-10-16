@@ -18,6 +18,7 @@
 import time
 from mcl import Board
 
+
 def setup_led(pinNumber):
     # Import Pin class on the remote board
     from machine import Pin
@@ -27,6 +28,7 @@ def setup_led(pinNumber):
 
     return led
 
+
 def toggle_led(led):
     TIME_SLEEP = 2
     val = True
@@ -34,6 +36,7 @@ def toggle_led(led):
         val = not val
         led.value(val)
         time.sleep(TIME_SLEEP)
+
 
 def main():
     # Connect to board (optional: baudrate=115200, timeout=1.0)
@@ -43,6 +46,7 @@ def main():
     led = board.def_function(setup_led)(PIN_NUMBER)
 
     toggle_led(led)
+
 
 if __name__ == "__main__":
     main()
