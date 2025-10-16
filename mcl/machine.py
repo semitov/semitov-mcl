@@ -15,11 +15,12 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 from serial import Serial, SerialException, SerialTimeoutException
-from typing import Callable, override, Self
+from typing import Callable, Self
 import time
 import inspect
 import textwrap
 import logging
+import ast
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -38,7 +39,7 @@ class MicroVariable:
     def __init__(self, name: str, board: "Board", debug: bool = False) -> None:
         self.__name: str = name
         self.__board: Board = board
-        self.__cached_value: str | None = None
+        self.__cached_value: object = None
 
         if debug:
             logging.basicConfig(
@@ -82,18 +83,16 @@ class MicroVariable:
         command = f"{self.__name}[{repr(key)}]"
         return self._execute_and_return(command)
 
-    def get_value(self, use_cache: bool = True) -> str:
+    def get_value(self, use_cache: bool = True) -> object:
         if use_cache and self.__cached_value is not None:
-            logger.debug(f"Cache hit for {self.__name}")
             return self.__cached_value
-        logger.debug(f"Cache miss for {self.__name}")
-        value = self.__board.execute(f"print({self.__name})")
-        self.__cached_value = value
-        return value
 
-    @override
-    def __str__(self) -> str:
-        return self.get_value()
+        raw_value = self.__board.execute(f"print({self.__name})")
+
+        try:
+            return ast.literal_eval(raw_value)
+        except (ValueError, SyntaxError):
+            return raw_value
 
     @property
     def name(self) -> str:
