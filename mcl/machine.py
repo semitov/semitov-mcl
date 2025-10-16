@@ -16,6 +16,7 @@
 
 from serial import Serial, SerialException, SerialTimeoutException
 from typing import Callable, Self
+from .microfs import MicroFS
 import time
 import inspect
 import textwrap
@@ -36,17 +37,10 @@ def stringify_args(*args: object, **kwargs: object) -> str:
 
 
 class MicroVariable:
-    def __init__(self, name: str, board: "Board", debug: bool = False) -> None:
+    def __init__(self, name: str, board: "Board") -> None:
         self.__name: str = name
         self.__board: Board = board
         self.__cached_value: object = None
-
-        if debug:
-            logging.basicConfig(
-                level=logging.DEBUG,
-                format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-                datefmt="%H:%M:%S",
-            )
 
     def _execute_and_return(self, command: str) -> "MicroVariable":
         return_var_name = self.__board.generate_var_name()
@@ -104,13 +98,27 @@ class Board:
     CTRL_D: bytes = b"\x04"
     CTRL_E: bytes = b"\x05"
 
-    def __init__(self, port: str, baudrate: int = 115200, timeout: float = 1.0) -> None:
+    def __init__(
+        self,
+        port: str,
+        baudrate: int = 115200,
+        timeout: float = 10.0,
+        debug: bool = False,
+    ) -> None:
         self.__port: str = port
         self.__baudrate: int = baudrate
         self.__timeout: float = timeout
         self.__boardscope: dict[str, MicroVariable] = {}
         self.__var_counter: int = 0
         self.__serial: Serial
+        self.__fs: MicroFS | None = None
+
+        if debug:
+            logging.basicConfig(
+                level=logging.DEBUG,
+                format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                datefmt="%H:%M:%S",
+            )
 
         self._connect()
         self.soft_reset()
@@ -178,6 +186,14 @@ class Board:
     def is_open(self) -> bool:
         return self.__serial.is_open if self.__serial else False
 
+    @property
+    def fs(self) -> "MicroFS":
+        if self.__fs is None:
+            logger.debug("Making a new MicroFS instance")
+            self.__fs = MicroFS(self)
+
+        return self.__fs
+
     def reconnect(self, timeout: float | None = None) -> None:
         if timeout is None:
             timeout = self.__timeout
@@ -229,23 +245,23 @@ class Board:
             self.__serial.close()
             logger.debug("Serial closed")
 
-    def _clean_repl_output(self, text: str, command: str | None = None) -> str:
+    def clean_repl_output(self, text: bytes) -> str:
         if not text:
             return ""
 
-        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        res = text.decode("utf-8", errors="ignore")
+        res = res.replace("\r\n", "\n").replace("\r", "\n")
 
-        if text.endswith(">>> "):
-            text = text[:-4].rstrip()
-        elif text.endswith(">>>"):
-            text = text[:-3].rstrip()
+        # skip echo
+        skip = res.find("=== \n")
+        if skip != -1:
+            res = res[skip + len("=== \n\n") : -len(">>> ")].strip()
+        else:
+            # skip first and last line
+            lines = res.split("\n")
+            res = "\n".join(lines[1:-1])
 
-        if command:
-            cmd = command.strip()
-            if text.startswith(cmd):
-                text = text[len(cmd) :]
-
-        return text.strip()
+        return res
 
     def generate_var_name(self) -> str:
         # Generate a variable name for internal use
@@ -290,9 +306,10 @@ class Board:
             self.__serial.reset_input_buffer()
             self.__serial.reset_output_buffer()
             logger.error("Timeout reading until")
+
         if response:
             logger.debug(
-                f"Response > {response.decode('utf-8', errors='ignore').strip()}"
+                f"Response:\n{response.decode('utf-8', errors='ignore').strip()}"
             )
         logger.debug(f"Received {len(response)} bytes")
         return response
@@ -310,25 +327,24 @@ class Board:
         _ = self.__serial.write(command.encode())
         self.__serial.flush()
 
+        response = b""
         try:
             response = self.__serial.read_until(b">>> ")
-            if response:
-                logger.debug(
-                    f"Raw Response > {response.decode('utf-8', errors='ignore').strip()}"
-                )
-
             logger.debug(f"Received {len(response)} bytes")
-            return response
+
         except SerialException as e:
             raise SerialException(f"Failed to execute {command.strip()}: {e}")
 
+        if response:
+            logger.debug(
+                f"Raw Response:\n{response.decode('utf-8', errors='ignore').strip()}"
+            )
+
+            return response
+
     def execute(self, command: str) -> str:
         response = self.execute_raw(command)
-        text = response.decode("utf-8", errors="ignore")
-
-        clean = self._clean_repl_output(text, command)
-        logger.debug(f"CLEAN: {clean} ({len(clean)}) chars")
-        return clean
+        return self.clean_repl_output(response)
 
     def set_variable(self, var_name: str, value: str | None = None) -> MicroVariable:
         if var_name not in self.__boardscope:
