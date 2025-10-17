@@ -21,6 +21,12 @@ cd SemiTOV-MCL
 uv sync
 ```
 
+If you want to run also the GUI example:
+
+```python
+uv sync --extra gui-example
+```
+
 Install the package:
 
 ```shell

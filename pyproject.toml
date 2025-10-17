@@ -1,7 +1,7 @@
 [project]
 name = "semitov-mcl"
 version = "0.1.0"
-description = "Control your micropython based MCU's with this library."
+description = "Micropython compatibility layer."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -20,6 +20,12 @@ classifiers = [
 [project.urls]
 Homepage = "https://github.com/semitov/SemiTOV-MCL"
 Repository = "https://github.com/semitov/SemiTOV-MCL"
+
+[project.optional-dependencies]
+gui-example = [
+    "pyqt6>=6.9.1",
+    "qt-material>=2.17",
+]
 
 [dependency-groups]
 dev = [
