@@ -14,69 +14,145 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from serial import Serial, SerialException
-from typing import Any, Callable, Optional
+from serial import Serial, SerialException, SerialTimeoutException
+from typing import Callable, Self
 import time
+import inspect
+import textwrap
+import logging
+import ast
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 def stringify_args(*args: object, **kwargs: object) -> str:
-    tmp: str = ",".join([val.__repr__() for val in args])
-    if len(args) != 0 and len(kwargs) != 0:
-        tmp += ","
-    tmp += ",".join([f"{key}={val.__repr__()}" for key, val in kwargs.items()])
-    return tmp
+    args_repr = ",".join(repr(val) for val in args)
+    kwargs_repr = ",".join(f"{key}={repr(val)}" for key, val in kwargs.items())
+
+    if args_repr and kwargs_repr:
+        return f"{args_repr},{kwargs_repr}"
+    return args_repr or kwargs_repr
 
 
 class MicroVariable:
-    def __init__(self, name: str, serial: Serial, execute_raw) -> None:
-        self.name = name
-        self.__serial = serial
-        self.execute_raw = execute_raw
+    def __init__(self, name: str, board: "Board") -> None:
+        self.__name: str = name
+        self.__board: Board = board
+        self.__cached_value: object = None
 
-    def __getattr__(self, name: str) -> Callable:
-        def micro_method(*args: Any, **kwargs: Any) -> bytes:
+    def _execute_and_return(self, command: str) -> "MicroVariable":
+        return_var_name = self.__board.generate_var_name()
+        logger.debug(f"Storing '{command}' -> '{return_var_name}'")
+        _ = self.__board.execute(f"{return_var_name} = {command}")
+        return MicroVariable(return_var_name, self.__board)
+
+    def __getattr__(self, name: str) -> Callable[..., "MicroVariable"]:
+        def wrapper(*args: object, **kwargs: object):
+            self.__cached_value = None
             args_str = stringify_args(*args, **kwargs)
-            payload = f"{self.name}.{name}({args_str})\r"
-            return self.execute_raw(payload)
+            logger.debug(f"Call {self.__name}.{name}({args_str})")
+            command = f"{self.__name}.{name}({args_str})"
+            return self._execute_and_return(command)
 
-        return micro_method
+        return wrapper
 
-    def __call__(self, *args: Any, **kwargs: Any) -> bytes:
+    def __call__(self, *args: object, **kwargs: object) -> "MicroVariable":
+        self.__cached_value = None
         args_str = stringify_args(*args, **kwargs)
-        payload = f"{self.name}({args_str})\r"
-        return self.execute_raw(payload)
+        logger.debug(f"Call {self.__name}({args_str})")
+        command = f"{self.__name}({args_str})"
+        return self._execute_and_return(command)
+
+    def __setitem__(self, key: object, value: object) -> None:
+        self.__cached_value = None
+        logger.debug(f"Set {self.__name}[{repr(key)}] = {repr(value)}")
+        command = f"{self.__name}[{repr(key)}] = {repr(value)}"
+        _ = self.__board.execute(command)
+
+    def __getitem__(self, key: object) -> "MicroVariable":
+        self.__cached_value = None
+        logger.debug(f"Get {self.__name}[{repr(key)}]")
+        command = f"{self.__name}[{repr(key)}]"
+        return self._execute_and_return(command)
+
+    def get_value(self, use_cache: bool = True) -> object:
+        if use_cache and self.__cached_value is not None:
+            return self.__cached_value
+
+        raw_value = self.__board.execute(f"print({self.__name})")
+
+        try:
+            return ast.literal_eval(raw_value)
+        except (ValueError, SyntaxError):
+            return raw_value
+
+    @property
+    def name(self) -> str:
+        return self.__name
 
 
 class Board:
+    CTRL_C: bytes = b"\x03"
+    CTRL_D: bytes = b"\x04"
+    CTRL_E: bytes = b"\x05"
+
     def __init__(
-        self, port: str, baudrate: int = 115200, timeout: Optional[float] = 1.0
+        self,
+        port: str,
+        baudrate: int = 115200,
+        timeout: float = 10.0,
+        debug: bool = False,
     ) -> None:
         self.__port: str = port
         self.__baudrate: int = baudrate
         self.__timeout: float = timeout
         self.__boardscope: dict[str, MicroVariable] = {}
+        self.__var_counter: int = 0
+        self.__serial: Serial
 
-        try:
-            self.__serial = Serial(port, baudrate, timeout=timeout)
-            time.sleep(0.1)
-            self.__serial.reset_input_buffer()
-            self.__serial.reset_output_buffer()
-            # Interrupt what is running
-            self.__serial.write(b"\x03")  # CTRL-C
-            time.sleep(0.1)
-            self.__serial.reset_input_buffer()
-        except SerialException as e:
-            raise SerialException(
-                f"Failed to connect to {port} (baud: {baudrate}): {e}"
+        if debug:
+            logging.basicConfig(
+                level=logging.DEBUG,
+                format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+                datefmt="%H:%M:%S",
             )
 
-    def __getattr__(self, name: str) -> Optional[MicroVariable]:
-        return self.__boardscope.get(name)
+        self._connect()
+        self.soft_reset()
 
-    def __enter__(self):
+    def _connect(self) -> None:
+        try:
+            logger.debug(
+                f"Connecting to {self.__port} @ {self.__baudrate} baud (timeout={self.__timeout})"
+            )
+            self.__serial = Serial(self.__port, self.__baudrate, timeout=self.__timeout)
+            time.sleep(0.1)
+            logger.debug("Serial opened; resetting buffers and sending CTRL-C")
+            self.__serial.reset_input_buffer()
+            self.__serial.reset_output_buffer()
+            _ = self.__serial.write(self.CTRL_C)
+            time.sleep(0.1)
+            self.__serial.reset_input_buffer()
+            logger.debug("Connected and REPL ready")
+        except SerialException:
+            logger.exception(f"Failed to connect to {self.__port}")
+            raise SerialException(f"Failed to connect to {self.__port}")
+
+    def __getattr__(self, name: str) -> MicroVariable:
+        logger.debug(f"Boardscope for '{name}'")
+        var = self.__boardscope.get(name)
+        if var is None:
+            logger.warning(f"Variable '{name}' not found in boardscope")
+            raise AttributeError(f"Variable '{name}' not found in boardscope")
+        return var
+
+    def __enter__(self) -> Self:
+        logger.debug("Entering Board context manager")
         return self
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(self, type: object, value: object, traceback: object):
+        logger.debug("Exiting Board context manager")
         self.close()
         return False
 
@@ -86,6 +162,7 @@ class Board:
 
     @port.setter
     def port(self, name: str) -> None:
+        logger.debug(f"Updating port to {name} and reconnecting")
         self.__port = name
         self.reconnect()
 
@@ -95,6 +172,7 @@ class Board:
 
     @baudrate.setter
     def baudrate(self, value: int) -> None:
+        logger.debug(f"Updating baudrate to {value} and reconnecting")
         self.__baudrate = value
         self.reconnect()
 
@@ -104,71 +182,173 @@ class Board:
 
     @property
     def is_open(self) -> bool:
-        return self.__serial.is_open if hasattr(self.__serial, "is_open") else False
+        return self.__serial.is_open if self.__serial else False
 
-    def reconnect(self, timeout: Optional[float] = None) -> None:
+    def reconnect(self, timeout: float | None = None) -> None:
         if timeout is None:
             timeout = self.__timeout
         else:
             self.__timeout = timeout
 
-        if self.__serial.is_open:
+        logger.debug(f"Reconnecting (timeout={timeout})")
+        if self.is_open:
+            logger.debug("Closing existing serial before reconnect")
             self.__serial.close()
+        self._connect()
+        logger.debug("Reconnected")
 
-        # Try to reconnect
-        self.__serial = Serial(self.__port, self.__baudrate, timeout=timeout)
-        time.sleep(0.1)
+    def soft_reset(self) -> None:
+        if not self.is_open:
+            raise SerialException("Serial not connected")
+        logger.debug("Soft reset (CTRL-D)")
         self.__serial.reset_input_buffer()
-        self.__serial.reset_output_buffer()
+        _ = self.__serial.write(self.CTRL_D)
+        try:
+            _ = self.__serial.read_until(b">>> ")
+            logger.debug("Soft reset complete")
+        except SerialTimeoutException:
+            self.__serial.reset_input_buffer()
+            self.__serial.reset_output_buffer()
+            logger.error("Timeout reading until")
+
+    def hard_reset(self) -> None:
+        if not self.is_open:
+            raise SerialException("Serial not connected")
+        try:
+            logger.debug("Hard reset")
+            cmd = """
+            import machine
+            machine.reset()
+            """
+            cmd = textwrap.dedent(cmd)
+            _ = self.execute_multiline(cmd)
+            logger.debug("Hard reset complete")
+        except SerialTimeoutException:
+            self.__serial.reset_input_buffer()
+            self.__serial.reset_output_buffer()
+            logger.error("Timeout reading until")
 
     def close(self) -> None:
-        if self.__serial.is_open:
+        logger.debug("Closing Board")
+        if self.is_open:
+            self.hard_reset()
             self.__serial.close()
+            logger.debug("Serial closed")
 
-    def execute_raw(self, command: str, echo: bool = False) -> bytes:
-        if not self.__serial.is_open:
+    def clean_repl_output(self, text: bytes) -> str:
+        if not text:
+            return ""
+
+        res = text.decode("utf-8", errors="ignore")
+        res = res.replace("\r\n", "\n").replace("\r", "\n")
+
+        # skip echo
+        skip = res.find("=== \n")
+        if skip != -1:
+            res = res[skip + len("=== \n\n") : -len(">>> ")].strip()
+        else:
+            # skip first and last line
+            lines = res.split("\n")
+            res = "\n".join(lines[1:-1])
+
+        return res
+
+    def generate_var_name(self) -> str:
+        # Generate a variable name for internal use
+        name = f"_mcl_var_{self.__var_counter}"
+        self.__var_counter += 1
+        logger.debug(f"Generated temp var name '{name}'")
+        return name
+
+    def def_function(self, func: object) -> MicroVariable:
+        if not callable(func):
+            raise TypeError(f"Expected a Callable, got: {type(func)}")
+        logger.debug(f"Defining function '{func.__name__}' on board")
+        source = inspect.getsource(func)
+        source = textwrap.dedent(source)
+        _ = self.execute_multiline(source)
+        logger.debug(f"Function '{func.__name__}' defined")
+        return self.set_variable(func.__name__)
+
+    def execute_multiline(self, command: str) -> bytes:
+        if not self.is_open:
+            raise SerialException("Serial not connected")
+        logger.debug(f"Sending {len(command)} bytes in paste mode")
+
+        # Enter paste mode
+        self.__serial.reset_input_buffer()
+        _ = self.__serial.write(self.CTRL_E)
+        try:
+            _ = self.__serial.read_until(b"=== ")
+        except SerialTimeoutException:
+            self.__serial.reset_input_buffer()
+            self.__serial.reset_output_buffer()
+            logger.error("Timeout reading until")
+
+        _ = self.__serial.write(command.encode())
+        _ = self.__serial.write(b"\r\n")
+        # Exit paste mode
+        _ = self.__serial.write(self.CTRL_D)
+        response = b""
+        try:
+            response = self.__serial.read_until(b"\r\n>>> ")
+        except SerialTimeoutException:
+            self.__serial.reset_input_buffer()
+            self.__serial.reset_output_buffer()
+            logger.error("Timeout reading until")
+
+        if response:
+            logger.debug(
+                f"Response:\n{response.decode('utf-8', errors='ignore').strip()}"
+            )
+        logger.debug(f"Received {len(response)} bytes")
+        return response
+
+    def execute_raw(self, command: str) -> bytes:
+        if not self.is_open:
             raise SerialException("Serial not connected")
 
-        if echo:
-            print(f"Executing > {command.rstrip()}")
+        logger.debug(f"Sending command length={len(command.rstrip())}")
 
+        if not command.endswith("\r"):
+            command += "\r"
+
+        self.__serial.reset_input_buffer()
+        _ = self.__serial.write(command.encode())
+        self.__serial.flush()
+
+        response = b""
         try:
-            if not command.endswith("\r"):
-                command += "\r"
+            response = self.__serial.read_until(b">>> ")
+            logger.debug(f"Received {len(response)} bytes")
 
-            self.__serial.write(command.encode())
-            self.__serial.flush()
-            response = self.__serial.read_until(b"\r\n")
-
-            if echo and response:
-                print(f"Response > {response.decode('utf-8').strip()}")
-
-            return response
         except SerialException as e:
             raise SerialException(f"Failed to execute {command.strip()}: {e}")
 
-    def execute(self, command: str, echo: bool = False) -> str:
-        response = self.execute_raw(command, echo=echo)
-        return response.decode("utf-8").strip()
-
-    def set_variable(self, var_name: str, value: Optional[str] = None) -> MicroVariable:
-        if var_name not in self.__boardscope:
-            self.__boardscope[var_name] = MicroVariable(
-                var_name, self.__serial, self.execute_raw
+        if response:
+            logger.debug(
+                f"Raw Response:\n{response.decode('utf-8', errors='ignore').strip()}"
             )
+
+        return response
+
+    def execute(self, command: str) -> str:
+        response = self.execute_raw(command)
+        return self.clean_repl_output(response)
+
+    def set_variable(self, var_name: str, value: str | None = None) -> MicroVariable:
+        if var_name not in self.__boardscope:
+            logger.debug(f"Adding '{var_name}' to boardscope")
+            self.__boardscope[var_name] = MicroVariable(var_name, self)
         if value is not None:
-            self.execute_raw(f"{var_name} = {value}")
+            logger.debug(f"Setting variable '{var_name}' to '{value}'")
+            _ = self.execute(f"{var_name} = {value}")
         return self.__boardscope[var_name]
 
-    def call_on_variable(
-        self, var_name: str, method_name: str, *args: object, **kwargs: object
-    ) -> str:
-        args_str = stringify_args(*args, **kwargs)
-        response = self.execute_raw(f"{var_name}.{method_name}({args_str})")
-        return response.decode("utf-8").strip()
-
-    def add_import(self, name: str) -> None:
-        self.execute_raw(f"import {name}")
-
-    def add_from_import(self, module: str, name: str) -> None:
-        self.execute_raw(f"from {module} import {name}")
+    def add_import(self, name: str, from_module: str | None = None) -> None:
+        if from_module:
+            logger.debug(f"Adding import: from {from_module} import {name}")
+            _ = self.execute(f"from {from_module} import {name}")
+        else:
+            logger.debug(f"Adding import: import {name}")
+            _ = self.execute(f"import {name}")
