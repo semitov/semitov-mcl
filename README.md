@@ -10,26 +10,26 @@
 
 Clone the repository:
 
-```shell
+```bash
 git clone https://github.com/semitov/SemiTOV-MCL.git
 ```
 
 Sync the project (creates virtual environment and installs dependencies):
 
-```shell
+```bash
 cd SemiTOV-MCL
 uv sync
 ```
 
 Install the package:
 
-```shell
+```bash
 uv pip install -e .
 ```
 
 ## How to run
 
-```python
+```bash
 uv run examples/<script_name.py>
 ```
 
@@ -62,8 +62,24 @@ See more examples [here](./examples/).
 
 Run tests:
 
-```shell
+```bash
 uv run pytest
+```
+
+## Serial Port Permissions (Linux)
+
+If you encounter a "Permission denied" error when accessing /dev/ttyACM0, add your user to the dialout group:
+
+```bash
+sudo usermod -a -G dialout $USER
+```
+
+**Important**: You must log out and log back in (or reboot) for the changes to take effect.
+
+To verify the change:
+
+```bash
+groups $USER
 ```
 
 ## How to contribute
