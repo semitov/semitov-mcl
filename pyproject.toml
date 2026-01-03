@@ -23,5 +23,6 @@ Repository = "https://github.com/semitov/SemiTOV-MCL"
 
 [dependency-groups]
 dev = [
+    "pyright>=1.1.406",
     "pytest>=8.4.2",
 ]
