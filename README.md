@@ -52,7 +52,11 @@ board.add_import("Pin", from_module="machine")
 After creating (or setting) a variable you will be able to use it as a normal one.
 
 ```python
-led = board.set_variable("led", "Pin(10, Pin.OUT)")
+# Literal assignment
+name = board.set_variable("name", "mia")
+
+# Expression assignment
+led = board.set_variable_expression("led", "Pin(10, Pin.OUT)")
 led.value(1)
 ```
 
