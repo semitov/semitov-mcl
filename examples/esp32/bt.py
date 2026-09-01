@@ -1,5 +1,6 @@
-from mcl import Board
 import time
+
+from mcl import Board
 
 
 def setup_ble(device_name: str):

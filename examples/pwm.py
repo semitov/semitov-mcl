@@ -15,13 +15,13 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from mcl import Board
 import time
+
+from mcl import Board
 
 
 def setup_pwm():
-    from machine import PWM
-    from machine import Pin
+    from machine import PWM, Pin
 
     pwm = PWM(Pin(29), freq=50, duty_u16=8192)
 
