@@ -31,8 +31,13 @@ _UNSET = object()
 
 
 def stringify_args(*args: object, **kwargs: object) -> str:
-    args_repr = ",".join(repr(val) for val in args)
-    kwargs_repr = ",".join(f"{key}={val!r}" for key, val in kwargs.items())
+    def _fmt(v: object) -> str:
+        if v.__class__.__name__ == "MicroVariable" and hasattr(v, "name"):
+            return v.name
+        return repr(v)
+
+    args_repr = ",".join(_fmt(v) for v in args)
+    kwargs_repr = ",".join(f"{key}={_fmt(val)}" for key, val in kwargs.items())
 
     if args_repr and kwargs_repr:
         return f"{args_repr},{kwargs_repr}"
@@ -69,16 +74,37 @@ class MicroVariable:
         return self._execute_and_return(command)
 
     def __setitem__(self, key: object, value: object) -> None:
-        self.__cached_value = None
+        self.__cached_value = _UNSET
         logger.debug(f"Set {self.__name}[{key!r}] = {value!r}")
         command = f"{self.__name}[{key!r}] = {value!r}"
         _ = self.__board.execute(command)
 
     def __getitem__(self, key: object) -> "MicroVariable":
-        self.__cached_value = None
+        self.__cached_value = _UNSET
         logger.debug(f"Get {self.__name}[{key!r}]")
         command = f"{self.__name}[{key!r}]"
         return self._execute_and_return(command)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        if name in (
+            "_MicroVariable__name",
+            "_MicroVariable__board",
+            "_MicroVariable__cached_value",
+        ):
+            object.__setattr__(self, name, value)
+            return
+        object.__setattr__(self, "_MicroVariable__cached_value", _UNSET)
+        val_repr = (
+            getattr(value, "name")  # noqa: B009
+            if value.__class__.__name__ == "MicroVariable" and hasattr(value, "name")
+            else repr(value)
+        )
+        logger.debug(
+            f"Set {self.__dict__.get('_MicroVariable__name', '?')}.{name} = {val_repr}"
+        )
+        _ = self.__dict__["_MicroVariable__board"].execute(
+            f"{self.__dict__['_MicroVariable__name']}.{name} = {val_repr}"
+        )
 
     def get_value(self, use_cache: bool = True) -> object:
         if use_cache and self.__cached_value is not _UNSET:
@@ -116,7 +142,7 @@ class Board:
         self.__timeout: float = timeout
         self.__boardscope: dict[str, MicroVariable] = {}
         self.__var_counter: int = 0
-        self.__serial: Serial
+        self.__serial: Serial | None = None
 
         if debug:
             logging.basicConfig(
@@ -184,12 +210,12 @@ class Board:
         self.reconnect()
 
     @property
-    def serial(self) -> Serial:
+    def serial(self) -> Serial | None:
         return self.__serial
 
     @property
     def is_open(self) -> bool:
-        return self.__serial.is_open if self.__serial else False
+        return bool(self.__serial and self.__serial.is_open)
 
     def reconnect(self, timeout: float | None = None) -> None:
         if timeout is None:
@@ -198,14 +224,14 @@ class Board:
             self.__timeout = timeout
 
         logger.debug(f"Reconnecting (timeout={timeout})")
-        if self.is_open:
+        if self.is_open and self.__serial is not None:
             logger.debug("Closing existing serial before reconnect")
             self.__serial.close()
         self._connect()
         logger.debug("Reconnected")
 
     def soft_reset(self) -> None:
-        if not self.is_open:
+        if not self.is_open or self.__serial is None:
             raise SerialException("Serial not connected")
         logger.debug("Soft reset (CTRL-D)")
         self.__serial.reset_input_buffer()
@@ -221,7 +247,7 @@ class Board:
             raise SerialTimeoutException(msg) from exc
 
     def hard_reset(self) -> None:
-        if not self.is_open:
+        if not self.is_open or self.__serial is None:
             raise SerialException("Serial not connected")
         try:
             logger.debug("Hard reset")
@@ -241,7 +267,7 @@ class Board:
 
     def close(self) -> None:
         logger.debug("Closing Board")
-        if self.is_open:
+        if self.is_open and self.__serial is not None:
             try:
                 self.hard_reset()
             except SerialTimeoutException:
@@ -257,8 +283,7 @@ class Board:
         res = text.decode("utf-8", errors="ignore")
         res = res.replace("\r\n", "\n").replace("\r", "\n")
 
-        if res.endswith(">>> "):
-            res = res[: -len(">>> ")]
+        res = res.removesuffix(">>> ")
 
         # Paste mode
         if "=== \n" in res:
@@ -292,7 +317,7 @@ class Board:
         return self.get_variable(func_name)
 
     def execute_multiline(self, command: str) -> bytes:
-        if not self.is_open:
+        if not self.is_open or self.__serial is None:
             raise SerialException("Serial not connected")
         logger.debug(f"Sending {len(command)} bytes in paste mode")
 
@@ -330,7 +355,7 @@ class Board:
         return response
 
     def execute_raw(self, command: str) -> bytes:
-        if not self.is_open:
+        if not self.is_open or self.__serial is None:
             raise SerialException("Serial not connected")
 
         logger.debug(f"Sending command length={len(command.rstrip())}")
