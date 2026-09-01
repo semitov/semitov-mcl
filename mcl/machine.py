@@ -14,13 +14,15 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-from serial import Serial, SerialException, SerialTimeoutException
-from typing import Callable, Self
-import time
-import inspect
-import textwrap
-import logging
 import ast
+import inspect
+import logging
+import textwrap
+import time
+from collections.abc import Callable
+from typing import Self
+
+from serial import Serial, SerialException, SerialTimeoutException
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -30,7 +32,7 @@ _UNSET = object()
 
 def stringify_args(*args: object, **kwargs: object) -> str:
     args_repr = ",".join(repr(val) for val in args)
-    kwargs_repr = ",".join(f"{key}={repr(val)}" for key, val in kwargs.items())
+    kwargs_repr = ",".join(f"{key}={val!r}" for key, val in kwargs.items())
 
     if args_repr and kwargs_repr:
         return f"{args_repr},{kwargs_repr}"
@@ -67,15 +69,15 @@ class MicroVariable:
         return self._execute_and_return(command)
 
     def __setitem__(self, key: object, value: object) -> None:
-        self.__cached_value = _UNSET
-        logger.debug(f"Set {self.__name}[{repr(key)}] = {repr(value)}")
-        command = f"{self.__name}[{repr(key)}] = {repr(value)}"
+        self.__cached_value = None
+        logger.debug(f"Set {self.__name}[{key!r}] = {value!r}")
+        command = f"{self.__name}[{key!r}] = {value!r}"
         _ = self.__board.execute(command)
 
     def __getitem__(self, key: object) -> "MicroVariable":
-        self.__cached_value = _UNSET
-        logger.debug(f"Get {self.__name}[{repr(key)}]")
-        command = f"{self.__name}[{repr(key)}]"
+        self.__cached_value = None
+        logger.debug(f"Get {self.__name}[{key!r}]")
+        command = f"{self.__name}[{key!r}]"
         return self._execute_and_return(command)
 
     def get_value(self, use_cache: bool = True) -> object:
