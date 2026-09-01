@@ -95,7 +95,7 @@ class MicroVariable:
             return
         object.__setattr__(self, "_MicroVariable__cached_value", _UNSET)
         val_repr = (
-            getattr(value, "name")  # noqa: B009
+            value.name
             if value.__class__.__name__ == "MicroVariable" and hasattr(value, "name")
             else repr(value)
         )
